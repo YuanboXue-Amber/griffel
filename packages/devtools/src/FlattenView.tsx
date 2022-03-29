@@ -1,8 +1,10 @@
 import * as React from 'react';
-import { makeStaticStyles, makeStyles, shorthands } from '@griffel/react';
+import { makeStaticStyles, makeStyles, mergeClasses, shorthands } from '@griffel/react';
 
+import { DARK_THEME_COLOR_TOKENS } from './colorTokens';
 import { SlotCSSRules } from './SlotCSSRules';
-import { getRulesBySlots } from './utils';
+import { useThemeContext } from './ThemeContext';
+import { filterSlots, getRulesBySlots } from './utils';
 import { ViewContext } from './ViewContext';
 
 import type { DebugResult } from '@griffel/core';
@@ -10,6 +12,17 @@ import type { DebugResult } from '@griffel/core';
 const useStyles = makeStyles({
   root: {
     paddingBottom: '10px',
+  },
+  input: {
+    width: 'calc(100% - 20px)',
+    color: 'inherit',
+    ...shorthands.margin('5px'),
+    ...shorthands.padding('2px'),
+    ...shorthands.borderRadius('2px'),
+    ...shorthands.border('1px', 'solid'),
+  },
+  inputDark: {
+    backgroundColor: DARK_THEME_COLOR_TOKENS.background,
   },
   info: {
     ...shorthands.margin(0, '5px'),
@@ -26,23 +39,36 @@ const useStaticStyles = makeStaticStyles({
   },
 });
 
-type FlattenViewProps = { debugResultRoot: DebugResult };
-
-export const FlattenView: React.FC<FlattenViewProps> = props => {
-  const { debugResultRoot } = props;
+export const FlattenView = ({ debugResultRoot }: { debugResultRoot: DebugResult }) => {
   const slots = React.useMemo(() => getRulesBySlots(debugResultRoot), [debugResultRoot]);
 
   useStaticStyles();
-  const classes = useStyles();
 
+  const theme = useThemeContext();
+  const classes = useStyles();
+  const inputClassName = mergeClasses(classes.input, theme === 'dark' && classes.inputDark);
+
+  const [searchTerm, setSearchTerm] = React.useState('');
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(event.target.value);
+  };
+
+  const filteredSlots = React.useMemo(() => filterSlots(slots, searchTerm), [slots, searchTerm]);
   const [highlightedClass, setHighlightedClass] = React.useState('');
   const contextValue = React.useMemo(() => ({ highlightedClass, setHighlightedClass }), [highlightedClass]);
 
   return (
     <div className={classes.root}>
+      <input
+        type="text"
+        placeholder="filter"
+        className={inputClassName}
+        value={searchTerm}
+        onChange={handleSearchChange}
+      />
       <div className={classes.info}>direction: {debugResultRoot.direction}</div>
       <ViewContext.Provider value={contextValue}>
-        {slots.map(({ slot, rules }) => (
+        {filteredSlots.map(({ slot, rules }) => (
           <SlotCSSRules key={slot} slot={slot} atomicRules={rules} />
         ))}
       </ViewContext.Provider>

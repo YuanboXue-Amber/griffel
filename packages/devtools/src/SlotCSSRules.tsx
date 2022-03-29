@@ -11,6 +11,7 @@ import type { AtomicRules } from './types';
 
 const useStyles = makeStyles({
   slotName: {
+    cursor: 'pointer',
     ...shorthands.padding('2px', '5px'),
     ...shorthands.margin('5px', 0),
     ...shorthands.borderTop('1px', 'solid', LIGHT_THEME_COLOR_TOKENS.slotNameBorder),
@@ -34,15 +35,22 @@ export const SlotCSSRules: React.FC<{ slot: string; atomicRules: AtomicRules[] }
   const classes = useStyles();
   const slotNameClassName = mergeClasses(classes.slotName, theme === 'dark' && classes.slotNameDark);
 
+  const [expanded, setExpanded] = React.useState(true);
+  const handleSlotNameClick = () => setExpanded(v => !v);
+
   const { setHighlightedClass } = useViewContext();
   const undoHighlight = () => setHighlightedClass('');
 
   return (
     <>
-      <pre className={slotNameClassName}>{slot}</pre>
-      <div className={classes.rules} onClick={undoHighlight}>
-        <MonolithicRulesView rules={rules} />
-      </div>
+      <pre className={slotNameClassName} onClick={handleSlotNameClick}>
+        {slot}
+      </pre>
+      {expanded && (
+        <div className={classes.rules} onClick={undoHighlight}>
+          <MonolithicRulesView rules={rules} />
+        </div>
+      )}
     </>
   );
 };
