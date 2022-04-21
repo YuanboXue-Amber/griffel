@@ -2,7 +2,9 @@ import beautify from 'js-beautify';
 import * as React from 'react';
 import { makeStyles, mergeClasses, shorthands } from '@griffel/react';
 
+import { DARK_THEME_COLOR_TOKENS, LIGHT_THEME_COLOR_TOKENS } from './colorTokens';
 import { HighlightedCSS } from './HighlightedCSS';
+import { useThemeContext } from './ThemeContext';
 import { useViewContext } from './ViewContext';
 import type { MonolithicRules, RuleDetail } from './types';
 
@@ -14,6 +16,9 @@ const formatCSS = (css: string) => {
 const INDENT = '10px';
 
 const useSingleRuleStyles = makeStyles({
+  root: {
+    cursor: 'pointer',
+  },
   overriden: {
     textDecorationLine: 'line-through',
   },
@@ -25,10 +30,21 @@ const useSingleRuleStyles = makeStyles({
     outlineStyle: 'dashed',
     outlineWidth: '1px',
   },
+  className: {
+    display: 'inline-block',
+    textDecorationLine: 'none',
+    marginLeft: '5px',
+    color: LIGHT_THEME_COLOR_TOKENS.cssSelector,
+  },
+  classNameDark: {
+    color: DARK_THEME_COLOR_TOKENS.cssSelector,
+  },
 });
 
 const SingleRuleView: React.FC<{ rule: RuleDetail; indent?: boolean }> = ({ rule, indent }) => {
   const { highlightedClass, setHighlightedClass } = useViewContext();
+
+  const [showClassName, setShowClassName] = React.useState(false);
 
   const handleClick = (e: React.SyntheticEvent) => {
     e.stopPropagation();
@@ -37,18 +53,23 @@ const SingleRuleView: React.FC<{ rule: RuleDetail; indent?: boolean }> = ({ rule
     } else {
       setHighlightedClass('');
     }
+    setShowClassName(v => !v);
   };
 
   const classes = useSingleRuleStyles();
-  const className = mergeClasses(
+  const rootClassName = mergeClasses(
+    classes.root,
     rule.overriddenBy && classes.overriden,
     indent && classes.indent,
     highlightedClass === rule.className && classes.highlighted,
   );
+  const theme = useThemeContext();
+  const className = mergeClasses(classes.className, theme === 'dark' && classes.classNameDark);
 
   return (
-    <div onClick={handleClick} className={className}>
+    <div onClick={handleClick} className={rootClassName}>
       <HighlightedCSS code={formatCSS(rule.css)} />
+      {showClassName && <pre className={className}>{rule.className}</pre>}
     </div>
   );
 };
