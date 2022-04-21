@@ -16,9 +16,6 @@ const formatCSS = (css: string) => {
 const INDENT = '10px';
 
 const useSingleRuleStyles = makeStyles({
-  root: {
-    cursor: 'pointer',
-  },
   overriden: {
     textDecorationLine: 'line-through',
   },
@@ -58,7 +55,6 @@ const SingleRuleView: React.FC<{ rule: RuleDetail; indent?: boolean }> = ({ rule
 
   const classes = useSingleRuleStyles();
   const rootClassName = mergeClasses(
-    classes.root,
     rule.overriddenBy && classes.overriden,
     indent && classes.indent,
     highlightedClass === rule.className && classes.highlighted,
