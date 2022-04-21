@@ -50,8 +50,10 @@ const SingleRuleView: React.FC<{ rule: RuleDetail; indent?: boolean }> = ({ rule
     } else {
       setHighlightedClass('');
     }
-    setShowClassName(v => !v);
   };
+
+  const handleMouseEnter = () => setShowClassName(true);
+  const handleMouseLeave = () => setShowClassName(false);
 
   const classes = useSingleRuleStyles();
   const rootClassName = mergeClasses(
@@ -63,7 +65,12 @@ const SingleRuleView: React.FC<{ rule: RuleDetail; indent?: boolean }> = ({ rule
   const className = mergeClasses(classes.className, theme === 'dark' && classes.classNameDark);
 
   return (
-    <div onClick={handleClick} className={rootClassName}>
+    <div
+      onClick={handleClick}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className={rootClassName}
+    >
       <HighlightedCSS code={formatCSS(rule.css)} />
       {showClassName && <pre className={className}>{rule.className}</pre>}
     </div>
