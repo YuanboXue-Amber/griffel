@@ -39,7 +39,10 @@ const useStaticStyles = makeStaticStyles({
   },
 });
 
-export const FlattenView = ({ debugResultRoot }: { debugResultRoot: DebugResult }) => {
+type FlattenViewProps = { debugResultRoot: DebugResult };
+
+export const FlattenView: React.FC<FlattenViewProps> = props => {
+  const { debugResultRoot } = props;
   const slots = React.useMemo(() => getRulesBySlots(debugResultRoot), [debugResultRoot]);
 
   useStaticStyles();
@@ -48,14 +51,15 @@ export const FlattenView = ({ debugResultRoot }: { debugResultRoot: DebugResult 
   const classes = useStyles();
   const inputClassName = mergeClasses(classes.input, theme === 'dark' && classes.inputDark);
 
+  const [highlightedClass, setHighlightedClass] = React.useState('');
+  const contextValue = React.useMemo(() => ({ highlightedClass, setHighlightedClass }), [highlightedClass]);
+
   const [searchTerm, setSearchTerm] = React.useState('');
   const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(event.target.value);
   };
 
   const filteredSlots = React.useMemo(() => filterSlots(slots, searchTerm), [slots, searchTerm]);
-  const [highlightedClass, setHighlightedClass] = React.useState('');
-  const contextValue = React.useMemo(() => ({ highlightedClass, setHighlightedClass }), [highlightedClass]);
 
   return (
     <div className={classes.root}>

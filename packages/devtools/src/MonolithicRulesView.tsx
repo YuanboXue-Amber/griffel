@@ -6,6 +6,7 @@ import { DARK_THEME_COLOR_TOKENS, LIGHT_THEME_COLOR_TOKENS } from './colorTokens
 import { HighlightedCSS } from './HighlightedCSS';
 import { useThemeContext } from './ThemeContext';
 import { useViewContext } from './ViewContext';
+
 import type { MonolithicRules, RuleDetail } from './types';
 
 const formatCSS = (css: string) => {
