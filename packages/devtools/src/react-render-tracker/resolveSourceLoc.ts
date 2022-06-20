@@ -17,34 +17,72 @@ let needWebpackSync = true;
 const callAsap =
   typeof requestIdleCallback === 'function' ? requestIdleCallback : (fn: () => void) => Promise.resolve().then(fn);
 
+const getResolve =
+  (sourceMapConsumer: SourceMapConsumer): Resolve =>
+  (loc: string, line: number, column: number) => {
+    const {
+      source,
+      line: origLine,
+      column: origColumn,
+    } = sourceMapConsumer.originalPositionFor({
+      line,
+      column,
+    });
+    console.log('resolved', source, origLine, origColumn);
+    const resolvedLoc = source ? `${source.replace(/\?.*$/, '')}:${origLine}:${origColumn + 1}` : loc;
+
+    cache.set(loc, resolvedLoc);
+
+    return resolvedLoc;
+  };
+
 function sourceToResolve(filepath: string, source: string | (() => any)) {
   const lazyResolve = (loc: string, line: number, column: number) => {
-    const [, sourceMapBase64] = String(source).match(/\/\/# sourceMappingURL=.+?;base64,([a-zA-Z0-9\+\/=]+)/) || [];
+    // const [, sourceMapBase64] = String(source).match(/\/\/# sourceMappingURL=.+?;base64,([a-zA-Z0-9\+\/=]+)/) || [];
+    const [, sourceMappingURL] = String(source).match(/\/\/# sourceMappingURL=([^\s'"]+)/) || [];
     let resolve: Resolve = noResolve;
 
-    if (sourceMapBase64) {
-      try {
-        const sourceMap = new SourceMapConsumer(JSON.parse(atob(sourceMapBase64)));
+    if (sourceMappingURL) {
+      const hasInlineSourceMap = sourceMappingURL.indexOf('base64,') >= 0;
 
-        resolve = (loc: string, line: number, column: number) => {
-          const {
-            source,
-            line: origLine,
-            column: origColumn,
-          } = sourceMap.originalPositionFor({
-            line,
-            column,
-          });
-          const resolvedLoc = source
-            ? `${source.replace(/^webpack:\/\//, '').replace(/\?.*$/, '')}:${origLine}:${origColumn + 1}`
-            : loc;
+      if (hasInlineSourceMap) {
+        const sourceMapBase64 = sourceMappingURL.match(/base64,([a-zA-Z0-9+/=]+)/)?.[1] ?? '';
 
-          cache.set(loc, resolvedLoc);
+        try {
+          const sourceMap = new SourceMapConsumer(JSON.parse(atob(sourceMapBase64)));
+          resolve = getResolve(sourceMap);
+        } catch (e) {
+          console.warn('[React Render Tracker] Source map parse error:', e);
+        }
+      } else {
+        let externalsourceMappingURL = sourceMappingURL;
+        if (!sourceMappingURL.startsWith('http') && !sourceMappingURL.startsWith('/')) {
+          // Resolve paths relative to the location of the file name
+          const lastSlashIdx = filepath.lastIndexOf('/');
+          if (lastSlashIdx !== -1) {
+            const baseURL = filepath.slice(0, lastSlashIdx);
+            externalsourceMappingURL = `${baseURL}/${sourceMappingURL}`;
+          }
+        }
 
-          return resolvedLoc;
+        resolve = async (loc: string, line: number, column: number) => {
+          try {
+            const response = await fetch(externalsourceMappingURL);
+            if (response.ok) {
+              const content = await response.text();
+              const sourceMap = new SourceMapConsumer(JSON.parse(content));
+              return getResolve(sourceMap)(loc, line, column);
+            } else {
+              console.warn(
+                `[React Render Tracker] Unable to fetch source map from ${externalsourceMappingURL}:`,
+                response.json(),
+              );
+            }
+          } catch (e) {
+            console.warn('[React Render Tracker] Source map parse error:', e);
+          }
+          return loc;
         };
-      } catch (e) {
-        console.warn('[React Render Tracker] Source map parse error:', e);
       }
     }
 
