@@ -3,19 +3,28 @@
 import { SourceMapConsumer } from 'source-map-js';
 
 type ChunkStorage = Record<string, () => void>;
-type Resolve = (loc: string, line: number, column: number) => string | Promise<string>;
+type ResolveResult = { source: string; origLine: number; origColumn: number };
+type Resolve = (loc: string, line: number, column: number) => ResolveResult | Promise<ResolveResult>;
 
-const cache = new Map<string, string | Promise<string>>();
+const cache = new Map<string, ResolveResult | Promise<ResolveResult>>();
 const knownWebpackChunks = new Map<string, number>();
 const sourceMapsResolve = new Map<string, Resolve | null>();
-const noResolve = (loc: string) => {
-  cache.set(loc, loc);
-  return loc;
+const noResolve = (loc: string, line: number, column: number) => {
+  cache.set(loc, { source: loc, origLine: line, origColumn: column });
+  return { source: loc, origLine: line, origColumn: column };
 };
-let needWebpackSync = true;
 
-const callAsap =
-  typeof requestIdleCallback === 'function' ? requestIdleCallback : (fn: () => void) => Promise.resolve().then(fn);
+// chrome.runtime.onConnect.addListener(function (port) {
+//   console.assert(port.name === 'content-script');
+//   port.onMessage.addListener(function (msg) {
+//     if (msg.id === 'sourceToResolve') {
+//       sourceToResolve(msg.filepath, msg.fn);
+//       console.log('amber invoke sourceToResolve', msg.filepath, msg.fn);
+//     } else if (msg.id === 'finish') {
+//       console.log('amber finished');
+//     }
+//   });
+// });
 
 const getResolve =
   (sourceMapConsumer: SourceMapConsumer): Resolve =>
@@ -28,8 +37,8 @@ const getResolve =
       line,
       column,
     });
-    console.log('resolved', source, origLine, origColumn);
-    const resolvedLoc = source ? `${source.replace(/\?.*$/, '')}:${origLine}:${origColumn + 1}` : loc;
+    console.log('amber originalPositionFor', source);
+    const resolvedLoc = source ? { source, origLine, origColumn } : { source: loc, origLine: line, origColumn: column };
 
     cache.set(loc, resolvedLoc);
 
@@ -46,9 +55,11 @@ function sourceToResolve(filepath: string, source: string | (() => any)) {
       const hasInlineSourceMap = sourceMappingURL.indexOf('base64,') >= 0;
 
       if (hasInlineSourceMap) {
+        console.log('amber hasInlineSourceMap', filepath);
         const sourceMapBase64 = sourceMappingURL.match(/base64,([a-zA-Z0-9+/=]+)/)?.[1] ?? '';
 
         try {
+          console.log('amber sourcemap json', JSON.parse(atob(sourceMapBase64)));
           const sourceMap = new SourceMapConsumer(JSON.parse(atob(sourceMapBase64)));
           resolve = getResolve(sourceMap);
         } catch (e) {
@@ -81,14 +92,14 @@ function sourceToResolve(filepath: string, source: string | (() => any)) {
           } catch (e) {
             console.warn('[React Render Tracker] Source map parse error:', e);
           }
-          return loc;
+          return { source: loc, origLine: line, origColumn: column };
         };
       }
     }
 
     sourceMapsResolve.set(filepath, resolve);
 
-    return resolve ? resolve(loc, line, column) : loc;
+    return resolve ? resolve(loc, line, column) : { source: loc, origLine: line, origColumn: column };
   };
 
   sourceMapsResolve.set(filepath, lazyResolve);
@@ -113,40 +124,6 @@ function asyncSourceToResolve(filepath: string, sourcePromise: Promise<string>) 
   });
 }
 
-function syncWebpackSourceMapsIfNeeded() {
-  if (!needWebpackSync) {
-    return;
-  }
-
-  needWebpackSync = false;
-  callAsap(() => (needWebpackSync = true));
-
-  for (const name of Object.keys(window)) {
-    if (!name.startsWith('webpackChunk_')) {
-      continue;
-    }
-
-    const knownSize = knownWebpackChunks.get(name) || 0;
-    const storage: [any, ChunkStorage][] = (window as { [key: string]: any })[name];
-
-    if (!Array.isArray(storage)) {
-      continue;
-    }
-
-    for (let i = knownSize; i < storage.length; i++) {
-      const storageEntry = storage[i];
-
-      if (Array.isArray(storageEntry) && storageEntry[1] && typeof storageEntry[1] === 'object') {
-        for (const [filepath, fn] of Object.entries(storageEntry[1])) {
-          sourceToResolve(filepath, fn);
-        }
-      }
-    }
-
-    knownWebpackChunks.set(name, storage.length);
-  }
-}
-
 function fetchIfNeeded(filepath: string) {
   if (!sourceMapsResolve.has(filepath)) {
     asyncSourceToResolve(
@@ -156,22 +133,59 @@ function fetchIfNeeded(filepath: string) {
   }
 }
 
-export function resolveSourceLoc(loc: string) {
+let callback: (filepath: string, line: number, column: number) => void = () => {};
+let curr: { filepath: string; loc: string; genLine: number; genColumn: number };
+chrome.runtime.onMessage.addListener(async function (request, sender, sendResponse) {
+  if (request.name === 'endGetWebpackChunkObjects') {
+    if (request.success) {
+      request.result.forEach(({ filepath: webpackFilepath, fn }: any) => {
+        if (webpackFilepath === curr.filepath) {
+          console.log('amber found matching filepath', curr.filepath, fn);
+        }
+        sourceToResolve(webpackFilepath, fn);
+      });
+
+      fetchIfNeeded(curr.filepath);
+
+      const resolveSourceMap = sourceMapsResolve.get(curr.filepath) || noResolve;
+      const resolvedloc = await resolveSourceMap(curr.loc, curr.genLine, curr.genColumn);
+      console.log('amber got resolvedloc', resolvedloc);
+      callback(resolvedloc.source, resolvedloc.origLine, resolvedloc.origColumn);
+    } else {
+      callback(curr.filepath, curr.genLine, curr.genColumn);
+    }
+  }
+});
+
+export async function resolveSourceLoc(loc: string, cb: (filepath: string, line: number, column: number) => void) {
   const cachedValue = cache.get(loc);
 
   if (cachedValue !== undefined) {
-    return cachedValue;
+    const result = await cachedValue;
+    callback(result.source, result.origLine, result.origColumn);
+    return;
   }
 
   const [, filepath, rawLine, rawColumn] =
     loc.replace(/^webpack-internal:\/\/\//, '').match(/^(.+?)(?::(\d+)(?::(\d+))?)?$/) || [];
+
+  console.log('amber filepath', filepath);
   const genLine = rawLine ? parseInt(rawLine, 10) : 1;
   const genColumn = rawColumn ? parseInt(rawColumn, 10) : 1;
 
-  syncWebpackSourceMapsIfNeeded();
-  fetchIfNeeded(filepath);
+  console.log('amber chrome.tabs', chrome.tabs);
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tabs[0] === undefined) {
+    cb(filepath, genLine, genColumn);
+    return;
+  }
 
-  const resolve = sourceMapsResolve.get(filepath) || noResolve;
-
-  return resolve(loc, genLine, genColumn);
+  chrome.tabs.sendMessage(tabs[0].id!, { name: 'extension', filepath }, function (response) {
+    console.log('found current tab');
+    console.log('extension request result from requesting syncWebpackSourceMapsIfNeeded', response.success);
+    if (response.success) {
+      callback = cb;
+      curr = { filepath, loc, genLine, genColumn };
+    }
+  });
 }

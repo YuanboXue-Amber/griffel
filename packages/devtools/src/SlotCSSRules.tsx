@@ -94,12 +94,20 @@ export const SlotCSSRules: React.FC<{ slot: string; atomicRules: AtomicRules[]; 
   );
 };
 
-function openOriginalCode(sourceURL: string) {
+async function openOriginalCode(sourceURL: string) {
   chrome.devtools.inspectedWindow.eval<string>('window.location.origin', {}, async () => {
-    const result = await resolveSourceLoc(sourceURL);
-    const results = result.split(':');
-    results.pop();
-    const line = Number(results.pop()) ?? 1;
-    chrome.devtools.panels.openResource(results.join(':'), line - 1, () => ({}));
+    // let result = sourceURL;
+    resolveSourceLoc(sourceURL, (filepath, line) =>
+      chrome.devtools.panels.openResource(filepath, line - 1, () => ({})),
+    );
+    // try {
+    //   result = await resolveSourceLoc(sourceURL);
+    // } catch (error) {
+    //   // TODO
+    //   console.warn(error);
+    // }
+    // const results = result.split(':');
+    // results.pop();
+    // const line = Number(results.pop()) ?? 1;
   });
 }
