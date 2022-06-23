@@ -24,6 +24,7 @@ const useStyles = makeStyles({
     position: 'sticky',
     top: 0,
     zIndex: 99,
+    backgroundColor: tokens.background,
   },
   input: {
     color: 'inherit',
